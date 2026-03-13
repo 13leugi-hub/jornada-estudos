@@ -202,9 +202,6 @@ h1 {
 .filter-dropdown-inline {
     position: relative;
     min-width: 160px;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
 }
 
 .filter-dropdown-inline select {
@@ -239,28 +236,6 @@ h1 {
     transform: translateY(-50%);
     pointer-events: none;
     color: var(--text-secondary);
-}
-
-/* Botão "+" azul ao lado do select */
-.add-materia-btn {
-    background: var(--btn-register);
-    border: none;
-    color: white;
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-    padding: 0;
-}
-
-.add-materia-btn:hover {
-    background: #2563EB;
-    transform: scale(1.05);
 }
 
 .month-navigation-inline {
@@ -301,7 +276,6 @@ h1 {
     white-space: nowrap;
 }
 
-/* Botão PDF */
 .pdf-btn {
     background: transparent;
     border: none;
@@ -485,10 +459,9 @@ td {
     border-bottom: 1px solid var(--border-color);
     font-size: 0.9rem;
     color: var(--text-primary);
-    text-transform: uppercase; /* tudo em caixa alta */
+    text-transform: uppercase;
 }
 
-/* Exceção para botões dentro da tabela */
 td button {
     text-transform: none;
 }
@@ -589,7 +562,6 @@ tbody tr.row-fechada:hover {
     border: 1px solid rgba(107, 114, 128, 0.2);
 }
 
-/* Cores para a coluna Revisão */
 .revisao-sim {
     color: #DC2626;
     font-weight: 700;
@@ -597,6 +569,38 @@ tbody tr.row-fechada:hover {
 .revisao-nao {
     color: #16A34A;
     font-weight: 700;
+}
+
+/* Input com ícone */
+.input-with-icon {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.input-with-icon select {
+    flex: 1;
+}
+
+.icon-btn {
+    background: #3B82F6;
+    color: white;
+    border: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+.icon-btn:hover {
+    background: #2563EB;
+    transform: scale(1.05);
 }
 
 /* FORMULÁRIO */
@@ -658,7 +662,6 @@ button {
     transition: all 0.3s ease;
 }
 
-/* EXCEÇÃO: Botão X não deve herdar estilos de button */
 button.close-modal {
     background: transparent !important;
     padding: 0 !important;
