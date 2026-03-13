@@ -101,13 +101,6 @@
                             <select id="filterMateria" onchange="filterStudies()">
                                 <option value="">Todas Matérias</option>
                             </select>
-                            <!-- Botão "+" azul para criar nova matéria -->
-                            <button class="add-materia-btn" onclick="openNewMateriaModal()" title="Criar nova matéria">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                </svg>
-                            </button>
                             <svg class="dropdown-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="6 9 12 15 18 9"></polyline>
                             </svg>
@@ -150,7 +143,7 @@
                             <polyline points="10 9 9 9 8 9"></polyline>
                         </svg>
                     </button>
-                    <button class="sync-btn" onclick="carregarDados()" title="Atualizar">
+                    <button class="sync-btn" onclick="carregarTudo()" title="Atualizar">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="23 4 23 10 17 10"></polyline>
                             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
@@ -207,9 +200,17 @@
                         <div class="form-grid">
                             <div class="form-group">
                                 <label for="materia">Matéria *</label>
-                                <select id="materia" required>
-                                    <option value="">Selecione uma matéria</option>
-                                </select>
+                                <div class="input-with-icon">
+                                    <select id="materia" required>
+                                        <option value="">Selecione uma matéria</option>
+                                    </select>
+                                    <button type="button" class="icon-btn" onclick="openNewMateriaModal()" title="Criar nova matéria" style="background: #3B82F6;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+                                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label for="unidade">Unidade</label>
