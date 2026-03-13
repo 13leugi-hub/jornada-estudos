@@ -1,11 +1,10 @@
 // =====================================================
-// JORNADA ACADÊMICA - CONTROLE DE ESTUDOS (COM BACKEND)
+// JORNADA ACADÊMICA - CONTROLE DE ESTUDOS (API)
 // =====================================================
 
-// Configuração da API
-const API_URL = window.location.hostname === 'localhost' 
-    ? 'http://localhost:3000/api' 
-    : '/api'; // no mesmo domínio em produção
+const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000/api'
+    : '/api';  // no Render, o frontend e backend podem estar no mesmo domínio
 
 let state = {
     studies: [],
@@ -24,37 +23,45 @@ const tabs = ['tab-geral', 'tab-questoes', 'tab-revisao'];
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
-    carregarDados();
+    carregarTudo();
     setupConnectionStatus();
     updateMonthDisplay();
     setInterval(checkConnection, 15000);
 });
 
-// ==================== CARREGAR DADOS DA API ====================
-async function carregarDados() {
+// ==================== API CALLS ====================
+async function apiFetch(url, options = {}) {
+    const response = await fetch(`${API_URL}${url}`, {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Erro na requisição');
+    }
+    return response.json();
+}
+
+async function carregarEstudos() {
+    const mes = state.currentMonth.getMonth();
+    const ano = state.currentMonth.getFullYear();
+    state.studies = await apiFetch(`/studies?mes=${mes}&ano=${ano}`);
+}
+
+async function carregarMaterias() {
+    state.subjects = await apiFetch('/subjects');
+}
+
+async function carregarTudo() {
     try {
-        // Carregar matérias
-        const materiasRes = await fetch(`${API_URL}/materias`);
-        if (materiasRes.ok) {
-            state.subjects = await materiasRes.json();
-        } else {
-            state.subjects = [];
-        }
-
-        // Carregar estudos do mês atual
-        const mes = state.currentMonth.getMonth() + 1;
-        const ano = state.currentMonth.getFullYear();
-        const estudosRes = await fetch(`${API_URL}/estudos?mes=${mes}&ano=${ano}`);
-        if (estudosRes.ok) {
-            state.studies = await estudosRes.json();
-        } else {
-            state.studies = [];
-        }
-
+        await Promise.all([carregarEstudos(), carregarMaterias()]);
         atualizarInterface();
+        showToast('Dados carregados', 'success');
     } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-        showToast('Erro ao conectar com o servidor', 'error');
+        showToast('Erro ao carregar dados: ' + error.message, 'error');
     }
 }
 
@@ -90,7 +97,6 @@ function populateMateriaSelect() {
     }
 }
 
-// ==================== FILTROS ====================
 function filterStudies() {
     state.searchTerm = document.getElementById('search').value.trim().toLowerCase();
     state.filterSubject = document.getElementById('filterMateria').value || null;
@@ -101,8 +107,10 @@ function filterStudies() {
 function changeMonth(direction) {
     state.currentMonth.setMonth(state.currentMonth.getMonth() + direction);
     updateMonthDisplay();
-    // Recarrega os estudos do novo mês
-    carregarDados();
+    carregarEstudos().then(() => {
+        updateTable();
+        updateDashboard();
+    });
 }
 
 function updateMonthDisplay() {
@@ -113,18 +121,16 @@ function updateMonthDisplay() {
     document.getElementById('currentMonth').textContent = `${monthName} ${year}`;
 }
 
-// ==================== TABELA ====================
 function updateTable() {
     const tbody = document.getElementById('estudosTableBody');
     if (!tbody) return;
 
-    // Filtro local (já temos os dados do mês)
     let filtered = state.studies.filter(study => {
         if (state.filterSubject && study.materia_id != state.filterSubject) return false;
         
         if (state.searchTerm) {
             const term = state.searchTerm;
-            if (!study.materia_nome?.toLowerCase().includes(term) &&
+            if (!study.materia_nome.toLowerCase().includes(term) &&
                 !study.conteudo.toLowerCase().includes(term) &&
                 !(study.unidade && study.unidade.toLowerCase().includes(term))) return false;
         }
@@ -171,15 +177,15 @@ function updateTable() {
                     <label for="check-${study.id}" class="checkbox-label-styled"></label>
                 </div>
             </td>
-            <td>${study.materia_nome || ''}</td>
+            <td>${study.materia_nome}</td>
             <td>${study.unidade || '-'}</td>
             <td>${study.conteudo}</td>
             <td><span class="${statusClass}">${status.replace('-', ' ').toUpperCase()}</span></td>
             <td>${desempenho}%</td>
             <td class="${revisaoClass}">${revisaoText}</td>
             <td class="actions-cell">
-                <button onclick="editStudy(${study.id})" class="action-btn edit">Editar</button>
-                <button onclick="openDeleteModal(${study.id})" class="action-btn delete">Excluir</button>
+                <button onclick="editStudy('${study.id}')" class="action-btn edit">Editar</button>
+                <button onclick="openDeleteModal('${study.id}')" class="action-btn delete">Excluir</button>
             </td>
         </tr>`;
     }).join('');
@@ -192,24 +198,22 @@ function getStudyStatus(study) {
     return 'programado';
 }
 
-// ==================== DASHBOARD ====================
 function updateDashboard() {
+    const monthStudies = state.studies;
     const hoje = new Date().toISOString().split('T')[0];
 
-    const finalizados = state.studies.filter(s => s.concluido).length;
-    const foraPrazo = state.studies.filter(s => !s.concluido && s.data_estudo < hoje).length;
-    const programados = state.studies.filter(s => !s.concluido && s.data_estudo >= hoje).length;
-    const revisao = state.studies.filter(s => s.data_revisao && s.data_revisao.trim() !== '').length;
+    const finalizados = monthStudies.filter(s => s.concluido).length;
+    const foraPrazo = monthStudies.filter(s => !s.concluido && s.data_estudo < hoje).length;
+    const programados = monthStudies.filter(s => !s.concluido && s.data_estudo >= hoje).length;
+    const revisao = monthStudies.filter(s => s.data_revisao && s.data_revisao.trim() !== '').length;
 
     document.getElementById('dashboardFinalizados').textContent = finalizados;
     document.getElementById('dashboardForaPrazo').textContent = foraPrazo;
     document.getElementById('dashboardProgramados').textContent = programados;
     document.getElementById('dashboardRevisao').textContent = revisao;
 
-    // Alerta apenas para fora do prazo
     const cardForaPrazo = document.getElementById('cardForaPrazo');
     atualizarPulseBadge(cardForaPrazo, foraPrazo);
-    // Revisão não tem alerta
 }
 
 function atualizarPulseBadge(card, count) {
@@ -232,26 +236,26 @@ function atualizarPulseBadge(card, count) {
     }
 }
 
-// ==================== MODAIS DE DASHBOARD ====================
 function abrirModalDashboard(tipo) {
     let title = '', lista = [], colunas = '';
     const hoje = new Date().toISOString().split('T')[0];
+    const monthStudies = state.studies;
 
     if (tipo === 'finalizados') {
         title = 'Estudos Finalizados';
-        lista = state.studies.filter(s => s.concluido);
+        lista = monthStudies.filter(s => s.concluido);
         colunas = '<tr><th>Matéria</th><th>Conteúdo</th><th>Data</th></tr>';
     } else if (tipo === 'fora-prazo') {
         title = 'Estudos Fora do Prazo';
-        lista = state.studies.filter(s => !s.concluido && s.data_estudo < hoje);
+        lista = monthStudies.filter(s => !s.concluido && s.data_estudo < hoje);
         colunas = '<tr><th>Matéria</th><th>Conteúdo</th><th>Data</th></tr>';
     } else if (tipo === 'programados') {
         title = 'Estudos Programados';
-        lista = state.studies.filter(s => !s.concluido && s.data_estudo >= hoje);
+        lista = monthStudies.filter(s => !s.concluido && s.data_estudo >= hoje);
         colunas = '<tr><th>Matéria</th><th>Conteúdo</th><th>Data</th></tr>';
     } else if (tipo === 'revisao') {
         title = 'Revisões Agendadas';
-        lista = state.studies.filter(s => s.data_revisao && s.data_revisao.trim() !== '');
+        lista = monthStudies.filter(s => s.data_revisao && s.data_revisao.trim() !== '');
         colunas = '<tr><th>Matéria</th><th>Conteúdo</th><th>Data Revisão</th></tr>';
     }
 
@@ -280,7 +284,6 @@ function closeDashboardModal() {
     document.getElementById('dashboardModal').classList.remove('show');
 }
 
-// ==================== FORMULÁRIO (CRIAR/EDITAR) ====================
 function toggleForm() {
     editingId = null;
     currentTab = 0;
@@ -300,31 +303,25 @@ function closeFormModal(canceled = false) {
     editingId = null;
 }
 
-async function editStudy(id) {
-    try {
-        const res = await fetch(`${API_URL}/estudos/${id}`);
-        if (!res.ok) throw new Error('Erro ao buscar estudo');
-        const study = await res.json();
-        
-        editingId = id;
-        currentTab = 0;
+function editStudy(id) {
+    const study = state.studies.find(s => s.id == id);
+    if (!study) return;
+    editingId = id;
+    currentTab = 0;
 
-        document.getElementById('formTitle').textContent = 'Editar Estudo';
-        document.getElementById('editId').value = study.id;
-        document.getElementById('materia').value = study.materia_id;
-        document.getElementById('unidade').value = study.unidade || '';
-        document.getElementById('conteudo').value = study.conteudo;
-        document.getElementById('data_estudo').value = study.data_estudo;
-        document.getElementById('quantidade').value = study.quantidade || '';
-        document.getElementById('total_acertos').value = study.total_acertos || '';
-        document.getElementById('data_revisao').value = study.data_revisao || '';
+    document.getElementById('formTitle').textContent = 'Editar Estudo';
+    document.getElementById('editId').value = study.id;
+    document.getElementById('materia').value = study.materia_id;
+    document.getElementById('unidade').value = study.unidade || '';
+    document.getElementById('conteudo').value = study.conteudo;
+    document.getElementById('data_estudo').value = study.data_estudo;
+    document.getElementById('quantidade').value = study.quantidade || '';
+    document.getElementById('total_acertos').value = study.total_acertos || '';
+    document.getElementById('data_revisao').value = study.data_revisao || '';
 
-        showTab(currentTab);
-        updateNavigationButtons();
-        document.getElementById('formModal').classList.add('show');
-    } catch (error) {
-        showToast('Erro ao carregar estudo', 'error');
-    }
+    showTab(currentTab);
+    updateNavigationButtons();
+    document.getElementById('formModal').classList.add('show');
 }
 
 async function saveStudy(event) {
@@ -349,10 +346,9 @@ async function saveStudy(event) {
         quantidade: parseInt(document.getElementById('quantidade').value) || null,
         total_acertos: parseInt(document.getElementById('total_acertos').value) || null,
         data_revisao: document.getElementById('data_revisao').value || '',
-        concluido: false // será definido pelo checkbox
+        concluido: editingId ? (state.studies.find(s => s.id == editingId)?.concluido || false) : false
     };
 
-    // Validações
     if (studyData.quantidade && studyData.total_acertos === null) {
         showToast('Informe o total de acertos', 'error');
         switchTab('tab-questoes');
@@ -369,97 +365,94 @@ async function saveStudy(event) {
         return;
     }
 
-    const editId = document.getElementById('editId').value;
-
     try {
-        let response;
-        if (editId) {
-            response = await fetch(`${API_URL}/estudos/${editId}`, {
+        if (editingId) {
+            const updated = await apiFetch(`/studies/${editingId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(studyData)
             });
+            const index = state.studies.findIndex(s => s.id == editingId);
+            if (index !== -1) state.studies[index] = updated;
+            showToast('Estudo atualizado!', 'success');
         } else {
-            response = await fetch(`${API_URL}/estudos`, {
+            const created = await apiFetch('/studies', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(studyData)
             });
+            state.studies.push(created);
+            showToast('Estudo cadastrado!', 'success');
         }
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Erro ao salvar');
-        }
-
-        const saved = await response.json();
         closeFormModal();
-        showToast(editId ? 'Estudo atualizado!' : 'Estudo cadastrado!', 'success');
-        await carregarDados(); // recarrega a lista
+        updateTable();
+        updateDashboard();
     } catch (error) {
-        showToast(error.message, 'error');
+        showToast('Erro: ' + error.message, 'error');
     }
 }
 
-// ==================== CHECKBOX FINALIZADO ====================
 async function toggleFinalizado(id, checked) {
-    try {
-        // Primeiro busca o estudo atual
-        const res = await fetch(`${API_URL}/estudos/${id}`);
-        if (!res.ok) throw new Error('Estudo não encontrado');
-        const study = await res.json();
+    const study = state.studies.find(s => s.id == id);
+    if (!study) return;
 
-        if (!checked) {
-            // Desmarcar: permitido sempre
-            await fetch(`${API_URL}/estudos/${id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ concluido: false })
+    if (!checked) {
+        study.concluido = false;
+        try {
+            await apiFetch(`/studies/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(study)
             });
-            showToast('Estudo marcado como não finalizado', 'success');
-            await carregarDados();
-            return;
+            showToast('Estudo desmarcado', 'success');
+        } catch (error) {
+            showToast('Erro ao atualizar', 'error');
         }
+        updateTable();
+        updateDashboard();
+        return;
+    }
 
-        // Marcando: validar
-        if (!study.quantidade || !study.total_acertos) {
-            showToast('Você ainda não registrou questões para este conteúdo', 'error');
-            await carregarDados(); // re-renderiza para desmarcar
-            return;
-        }
+    if (!study.quantidade || !study.total_acertos) {
+        showToast('Você ainda não registrou questões para este conteúdo', 'error');
+        updateTable(); // reverte visual
+        return;
+    }
 
-        const desempenho = (study.total_acertos / study.quantidade) * 100;
-        if (desempenho >= 85) {
-            await fetch(`${API_URL}/estudos/${id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ concluido: true })
+    const desempenho = (study.total_acertos / study.quantidade) * 100;
+    if (desempenho >= 85) {
+        study.concluido = true;
+        try {
+            await apiFetch(`/studies/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(study)
             });
             showToast(`Conteúdo finalizado com ${desempenho.toFixed(0)}%!`, 'success');
-            await carregarDados();
+        } catch (error) {
+            showToast('Erro ao atualizar', 'error');
+        }
+        updateTable();
+        updateDashboard();
+    } else {
+        if (!study.data_revisao) {
+            showToast('Você precisa definir uma data de revisão', 'error');
+            updateTable(); // reverte
+            return;
         } else {
-            if (!study.data_revisao) {
-                showToast('Você precisa definir uma data de revisão', 'error');
-                await carregarDados(); // desmarca
-                return;
-            } else {
-                await fetch(`${API_URL}/estudos/${id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ concluido: true })
+            study.concluido = true;
+            try {
+                await apiFetch(`/studies/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(study)
                 });
                 const dataRev = study.data_revisao.split('-').reverse().join('/');
                 showToast(`Conteúdo finalizado. Revisão marcada para ${dataRev}!`, 'error');
-                await carregarDados();
+            } catch (error) {
+                showToast('Erro ao atualizar', 'error');
             }
+            updateTable();
+            updateDashboard();
         }
-    } catch (error) {
-        showToast('Erro ao atualizar status', 'error');
-        await carregarDados();
     }
 }
 
-// ==================== ABAS DO FORMULÁRIO ====================
 function switchTab(tabId) {
     const tabIndex = tabs.indexOf(tabId);
     if (tabIndex !== -1) {
@@ -516,7 +509,6 @@ function previousTab() {
     }
 }
 
-// ==================== GERENCIAR MATÉRIAS ====================
 function openNewMateriaModal() {
     document.getElementById('nomeMateria').value = '';
     document.getElementById('newMateriaModal').classList.add('show');
@@ -535,41 +527,31 @@ async function saveNewMateria(event) {
     }
 
     try {
-        const response = await fetch(`${API_URL}/materias`, {
+        const created = await apiFetch('/subjects', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ nome })
         });
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Erro ao criar matéria');
-        }
+        state.subjects.push(created);
         closeNewMateriaModal();
         showToast(`Matéria "${nome}" criada!`, 'success');
-        await carregarDados(); // recarrega matérias
+        populateMateriaSelect();
     } catch (error) {
-        showToast(error.message, 'error');
+        showToast('Erro: ' + error.message, 'error');
     }
 }
 
-async function openManageMateriasModal() {
-    try {
-        const res = await fetch(`${API_URL}/materias`);
-        const materias = await res.json();
-        const tbody = document.getElementById('materiasTableBody');
-        tbody.innerHTML = materias.map(s => `
-            <tr>
-                <td>${s.nome}</td>
-                <td style="text-align:center;">
-                    <button onclick="confirmarExcluirMateria(${s.id}, '${s.nome}')" class="action-btn delete">Excluir</button>
-                </td>
-            </tr>
-        `).join('') || '<tr><td colspan="2" style="text-align:center;">Nenhuma matéria</td></tr>';
-        
-        document.getElementById('manageMateriasModal').classList.add('show');
-    } catch (error) {
-        showToast('Erro ao carregar matérias', 'error');
-    }
+function openManageMateriasModal() {
+    const tbody = document.getElementById('materiasTableBody');
+    tbody.innerHTML = state.subjects.map(s => `
+        <tr>
+            <td>${s.nome}</td>
+            <td style="text-align:center;">
+                <button onclick="confirmarExcluirMateria(${s.id}, '${s.nome}')" class="action-btn delete">Excluir</button>
+            </td>
+        </tr>
+    `).join('') || '<tr><td colspan="2" style="text-align:center;">Nenhuma matéria</td></tr>';
+    
+    document.getElementById('manageMateriasModal').classList.add('show');
 }
 
 function closeManageMateriasModal() {
@@ -585,18 +567,17 @@ function confirmarExcluirMateria(id, nome) {
 
 async function excluirMateria(id) {
     try {
-        const response = await fetch(`${API_URL}/materias/${id}`, {
-            method: 'DELETE'
-        });
-        if (!response.ok) throw new Error('Erro ao excluir');
+        await apiFetch(`/subjects/${id}`, { method: 'DELETE' });
+        state.studies = state.studies.filter(s => s.materia_id !== id);
+        state.subjects = state.subjects.filter(s => s.id !== id);
+        if (state.filterSubject === id) state.filterSubject = null;
         showToast('Matéria excluída com sucesso', 'success');
-        await carregarDados(); // recarrega matérias e estudos
+        atualizarInterface();
     } catch (error) {
-        showToast(error.message, 'error');
+        showToast('Erro: ' + error.message, 'error');
     }
 }
 
-// ==================== EXCLUSÃO DE ESTUDO ====================
 function openDeleteModal(id) {
     deleteId = id;
     document.getElementById('deleteMessage').textContent = 'Tem certeza que deseja excluir este estudo?';
@@ -609,21 +590,20 @@ function closeDeleteModal() {
 }
 
 async function confirmDelete() {
-    if (!deleteId) return;
-    try {
-        const response = await fetch(`${API_URL}/estudos/${deleteId}`, {
-            method: 'DELETE'
-        });
-        if (!response.ok) throw new Error('Erro ao excluir');
-        showToast('Estudo excluído!', 'success');
-        await carregarDados();
-    } catch (error) {
-        showToast(error.message, 'error');
+    if (deleteId) {
+        try {
+            await apiFetch(`/studies/${deleteId}`, { method: 'DELETE' });
+            state.studies = state.studies.filter(s => s.id != deleteId);
+            showToast('Estudo excluído!', 'success');
+            updateTable();
+            updateDashboard();
+        } catch (error) {
+            showToast('Erro: ' + error.message, 'error');
+        }
+        closeDeleteModal();
     }
-    closeDeleteModal();
 }
 
-// ==================== UTILITÁRIOS ====================
 function showToast(message, type = 'success') {
     document.querySelectorAll('.floating-message').forEach(m => m.remove());
     const div = document.createElement('div');
@@ -654,8 +634,8 @@ function checkConnection() {
     }
 }
 
-// ==================== PDF ====================
-async function gerarPDF() {
+// PDF
+function gerarPDF() {
     if (!state.filterSubject) {
         showToast('Selecione uma matéria no filtro para gerar o PDF', 'error');
         return;
@@ -664,46 +644,38 @@ async function gerarPDF() {
     const materia = state.subjects.find(s => s.id == state.filterSubject);
     if (!materia) return;
 
-    try {
-        // Buscar todos os estudos da matéria (sem filtro de mês)
-        const res = await fetch(`${API_URL}/estudos?materia_id=${materia.id}`);
-        if (!res.ok) throw new Error('Erro ao buscar estudos');
-        const todosEstudos = await res.json();
+    const estudos = state.studies.filter(s => 
+        s.materia_id == state.filterSubject &&
+        s.quantidade > 0 && 
+        ((s.total_acertos / s.quantidade) * 100) < 100
+    );
 
-        const estudos = todosEstudos.filter(s => 
-            s.quantidade > 0 && 
-            ((s.total_acertos / s.quantidade) * 100) < 100
-        );
-
-        if (estudos.length === 0) {
-            showToast('Nenhum estudo com desempenho inferior a 100% para esta matéria', 'error');
-            return;
-        }
-
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
-        let y = 20;
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(15);
-        doc.text(materia.nome, doc.internal.pageSize.width / 2, y, { align: 'center' });
-        y += 15;
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(12);
-        estudos.forEach(est => {
-            const data = est.data_estudo.split('-').reverse().join('/');
-            doc.text(`${est.conteudo} - ${data}`, 14, y);
-            y += 8;
-            if (y > 280) {
-                doc.addPage();
-                y = 20;
-            }
-        });
-
-        doc.save(`estudos_${materia.nome.toLowerCase()}.pdf`);
-        showToast('PDF gerado com sucesso!', 'success');
-    } catch (error) {
-        showToast('Erro ao gerar PDF', 'error');
+    if (estudos.length === 0) {
+        showToast('Nenhum estudo com desempenho inferior a 100% para esta matéria', 'error');
+        return;
     }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let y = 20;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.text(materia.nome, doc.internal.pageSize.width / 2, y, { align: 'center' });
+    y += 15;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(12);
+    estudos.forEach(est => {
+        const data = est.data_estudo.split('-').reverse().join('/');
+        doc.text(`${est.conteudo} - ${data}`, 14, y);
+        y += 8;
+        if (y > 280) {
+            doc.addPage();
+            y = 20;
+        }
+    });
+
+    doc.save(`estudos_${materia.nome.toLowerCase()}.pdf`);
+    showToast('PDF gerado com sucesso!', 'success');
 }
