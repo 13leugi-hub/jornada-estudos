@@ -11,38 +11,57 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Middleware para log de todas as requisições (opcional, útil para debug)
+// Log de todas as requisições
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
   next();
 });
 
-// Servir arquivos estáticos da pasta "public"
+// Servir arquivos estáticos
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Inicializa cliente Supabase
+// Verifica variáveis de ambiente
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('❌ Variáveis de ambiente SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não definidas');
+  process.exit(1);
+}
+
+// Inicializa Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// ==================== ROTAS DA API ====================
+// Testa conexão com Supabase (opcional)
+(async () => {
+  try {
+    const { error } = await supabase.from('subjects').select('count', { count: 'exact', head: true });
+    if (error) throw error;
+    console.log('✅ Conexão com Supabase OK');
+  } catch (err) {
+    console.error('❌ Erro ao conectar com Supabase:', err.message);
+  }
+})();
 
-// ---- Studies ----
+// ==================== ROTAS ====================
 
-// GET /api/studies?mes=2&ano=2026
+// GET /api/studies
 app.get('/api/studies', async (req, res) => {
   try {
     const { mes, ano } = req.query;
+    console.log(`Parâmetros recebidos: mes=${mes}, ano=${ano}`);
+
     let query = supabase.from('studies').select('*');
 
     if (mes !== undefined && ano !== undefined) {
-      // Converte mês (0-11) para número (1-12) e monta intervalo
       const month = parseInt(mes) + 1;
       const year = parseInt(ano);
+      if (isNaN(month) || isNaN(year)) {
+        return res.status(400).json({ error: 'mes e ano devem ser números' });
+      }
       const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-      // Último dia do mês (simplificado, assume 31 – mas o banco de dados lida com isso)
       const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+      console.log(`Filtrando por data entre ${startDate} e ${endDate}`);
       query = query.gte('data_estudo', startDate).lte('data_estudo', endDate);
     }
 
@@ -50,14 +69,15 @@ app.get('/api/studies', async (req, res) => {
     if (error) throw error;
     res.json(data);
   } catch (error) {
-    console.error('Erro em GET /api/studies:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Erro em GET /api/studies:', error);
+    res.status(500).json({ error: error.message, details: error.details });
   }
 });
 
 // POST /api/studies
 app.post('/api/studies', async (req, res) => {
   try {
+    console.log('Dados recebidos para criar estudo:', req.body);
     const { data, error } = await supabase
       .from('studies')
       .insert([req.body])
@@ -66,8 +86,8 @@ app.post('/api/studies', async (req, res) => {
     if (error) throw error;
     res.status(201).json(data);
   } catch (error) {
-    console.error('Erro em POST /api/studies:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Erro em POST /api/studies:', error);
+    res.status(500).json({ error: error.message, details: error.details });
   }
 });
 
@@ -75,6 +95,7 @@ app.post('/api/studies', async (req, res) => {
 app.put('/api/studies/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Atualizando estudo ${id} com:`, req.body);
     const { data, error } = await supabase
       .from('studies')
       .update(req.body)
@@ -84,8 +105,8 @@ app.put('/api/studies/:id', async (req, res) => {
     if (error) throw error;
     res.json(data);
   } catch (error) {
-    console.error('Erro em PUT /api/studies/:id', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Erro em PUT /api/studies/:id', error);
+    res.status(500).json({ error: error.message, details: error.details });
   }
 });
 
@@ -93,6 +114,7 @@ app.put('/api/studies/:id', async (req, res) => {
 app.delete('/api/studies/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Deletando estudo ${id}`);
     const { error } = await supabase
       .from('studies')
       .delete()
@@ -100,12 +122,10 @@ app.delete('/api/studies/:id', async (req, res) => {
     if (error) throw error;
     res.status(204).send();
   } catch (error) {
-    console.error('Erro em DELETE /api/studies/:id', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Erro em DELETE /api/studies/:id', error);
+    res.status(500).json({ error: error.message, details: error.details });
   }
 });
-
-// ---- Subjects ----
 
 // GET /api/subjects
 app.get('/api/subjects', async (req, res) => {
@@ -117,8 +137,8 @@ app.get('/api/subjects', async (req, res) => {
     if (error) throw error;
     res.json(data);
   } catch (error) {
-    console.error('Erro em GET /api/subjects:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Erro em GET /api/subjects:', error);
+    res.status(500).json({ error: error.message, details: error.details });
   }
 });
 
@@ -126,6 +146,7 @@ app.get('/api/subjects', async (req, res) => {
 app.post('/api/subjects', async (req, res) => {
   try {
     const { nome } = req.body;
+    console.log('Criando nova matéria:', nome);
     const { data, error } = await supabase
       .from('subjects')
       .insert([{ nome }])
@@ -134,18 +155,17 @@ app.post('/api/subjects', async (req, res) => {
     if (error) throw error;
     res.status(201).json(data);
   } catch (error) {
-    console.error('Erro em POST /api/subjects:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Erro em POST /api/subjects:', error);
+    res.status(500).json({ error: error.message, details: error.details });
   }
 });
 
-// DELETE /api/subjects/:id (remove também os estudos vinculados)
+// DELETE /api/subjects/:id
 app.delete('/api/subjects/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    // Deleta todos os estudos relacionados
+    console.log(`Deletando matéria ${id} e seus estudos`);
     await supabase.from('studies').delete().eq('materia_id', id);
-    // Deleta a matéria
     const { error } = await supabase
       .from('subjects')
       .delete()
@@ -153,18 +173,26 @@ app.delete('/api/subjects/:id', async (req, res) => {
     if (error) throw error;
     res.status(204).send();
   } catch (error) {
-    console.error('Erro em DELETE /api/subjects/:id', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Erro em DELETE /api/subjects/:id', error);
+    res.status(500).json({ error: error.message, details: error.details });
   }
 });
 
-// Health check (para monitoramento)
+// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Inicia o servidor
+// Middleware de erro global (captura erros não tratados)
+app.use((err, req, res, next) => {
+  console.error('🔥 Erro não tratado:', err);
+  res.status(500).json({ error: 'Erro interno do servidor' });
+});
+
+// Inicia servidor
 app.listen(port, () => {
   console.log(`🚀 Servidor rodando na porta ${port}`);
   console.log(`📁 Servindo arquivos estáticos de: ${path.join(__dirname, 'public')}`);
+  console.log(`🔗 SUPABASE_URL: ${process.env.SUPABASE_URL ? 'definida' : 'NÃO DEFINIDA'}`);
+  console.log(`🔑 SUPABASE_KEY: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'definida' : 'NÃO DEFINIDA'}`);
 });
