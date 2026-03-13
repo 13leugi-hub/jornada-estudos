@@ -1,203 +1,170 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // para servir frontend (opcional)
 
-// Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-// ==================== ROTAS DE MATÉRIAS ====================
-
-// Listar todas as matérias
-app.get('/api/materias', async (req, res) => {
-    const { data, error } = await supabase
-        .from('materias')
-        .select('*')
-        .order('nome');
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+// Middleware para log de todas as requisições (opcional, útil para debug)
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
 });
 
-// Criar nova matéria
-app.post('/api/materias', async (req, res) => {
+// Servir arquivos estáticos da pasta "public"
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Inicializa cliente Supabase
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// ==================== ROTAS DA API ====================
+
+// ---- Studies ----
+
+// GET /api/studies?mes=2&ano=2026
+app.get('/api/studies', async (req, res) => {
+  try {
+    const { mes, ano } = req.query;
+    let query = supabase.from('studies').select('*');
+
+    if (mes !== undefined && ano !== undefined) {
+      // Converte mês (0-11) para número (1-12) e monta intervalo
+      const month = parseInt(mes) + 1;
+      const year = parseInt(ano);
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      // Último dia do mês (simplificado, assume 31 – mas o banco de dados lida com isso)
+      const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+      query = query.gte('data_estudo', startDate).lte('data_estudo', endDate);
+    }
+
+    const { data, error } = await query.order('data_estudo', { ascending: false });
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    console.error('Erro em GET /api/studies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/studies
+app.post('/api/studies', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('studies')
+      .insert([req.body])
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (error) {
+    console.error('Erro em POST /api/studies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/studies/:id
+app.put('/api/studies/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('studies')
+      .update(req.body)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    console.error('Erro em PUT /api/studies/:id', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/studies/:id
+app.delete('/api/studies/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabase
+      .from('studies')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    res.status(204).send();
+  } catch (error) {
+    console.error('Erro em DELETE /api/studies/:id', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---- Subjects ----
+
+// GET /api/subjects
+app.get('/api/subjects', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('subjects')
+      .select('*')
+      .order('nome');
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    console.error('Erro em GET /api/subjects:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/subjects
+app.post('/api/subjects', async (req, res) => {
+  try {
     const { nome } = req.body;
-    if (!nome) return res.status(400).json({ error: 'Nome é obrigatório' });
-
     const { data, error } = await supabase
-        .from('materias')
-        .insert([{ nome: nome.toUpperCase() }])
-        .select();
-    if (error) return res.status(500).json({ error: error.message });
-    res.status(201).json(data[0]);
+      .from('subjects')
+      .insert([{ nome }])
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (error) {
+    console.error('Erro em POST /api/subjects:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// Excluir matéria (e estudos em cascata)
-app.delete('/api/materias/:id', async (req, res) => {
+// DELETE /api/subjects/:id (remove também os estudos vinculados)
+app.delete('/api/subjects/:id', async (req, res) => {
+  try {
     const { id } = req.params;
+    // Deleta todos os estudos relacionados
+    await supabase.from('studies').delete().eq('materia_id', id);
+    // Deleta a matéria
     const { error } = await supabase
-        .from('materias')
-        .delete()
-        .eq('id', id);
-    if (error) return res.status(500).json({ error: error.message });
+      .from('subjects')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
     res.status(204).send();
+  } catch (error) {
+    console.error('Erro em DELETE /api/subjects/:id', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// ==================== ROTAS DE ESTUDOS ====================
-
-// Listar estudos (com filtros opcionais)
-app.get('/api/estudos', async (req, res) => {
-    const { mes, ano, materia_id } = req.query;
-    let query = supabase
-        .from('estudos')
-        .select(`
-            *,
-            materias ( nome )
-        `)
-        .order('data_estudo', { ascending: false });
-
-    if (mes && ano) {
-        const start = `${ano}-${String(mes).padStart(2, '0')}-01`;
-        const end = `${ano}-${String(mes).padStart(2, '0')}-31`;
-        query = query.gte('data_estudo', start).lte('data_estudo', end);
-    }
-
-    if (materia_id) {
-        query = query.eq('materia_id', materia_id);
-    }
-
-    const { data, error } = await query;
-    if (error) return res.status(500).json({ error: error.message });
-
-    // Mapear para incluir materia_nome
-    const result = data.map(item => ({
-        ...item,
-        materia_nome: item.materias?.nome
-    }));
-    res.json(result);
+// Health check (para monitoramento)
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Buscar um estudo por ID
-app.get('/api/estudos/:id', async (req, res) => {
-    const { id } = req.params;
-    const { data, error } = await supabase
-        .from('estudos')
-        .select(`
-            *,
-            materias ( nome )
-        `)
-        .eq('id', id)
-        .single();
-    if (error) return res.status(404).json({ error: 'Estudo não encontrado' });
-    data.materia_nome = data.materias?.nome;
-    delete data.materias;
-    res.json(data);
-});
-
-// Criar novo estudo
-app.post('/api/estudos', async (req, res) => {
-    const {
-        materia_id,
-        unidade,
-        conteudo,
-        data_estudo,
-        quantidade,
-        total_acertos,
-        data_revisao,
-        concluido = false
-    } = req.body;
-
-    if (!materia_id || !conteudo || !data_estudo) {
-        return res.status(400).json({ error: 'Campos obrigatórios faltando' });
-    }
-
-    const { data, error } = await supabase
-        .from('estudos')
-        .insert([{
-            materia_id,
-            unidade,
-            conteudo: conteudo.toUpperCase(),
-            data_estudo,
-            quantidade,
-            total_acertos,
-            data_revisao,
-            concluido
-        }])
-        .select();
-    if (error) return res.status(500).json({ error: error.message });
-    res.status(201).json(data[0]);
-});
-
-// Atualizar estudo
-app.put('/api/estudos/:id', async (req, res) => {
-    const { id } = req.params;
-    const {
-        materia_id,
-        unidade,
-        conteudo,
-        data_estudo,
-        quantidade,
-        total_acertos,
-        data_revisao,
-        concluido
-    } = req.body;
-
-    const updateData = {};
-    if (materia_id !== undefined) updateData.materia_id = materia_id;
-    if (unidade !== undefined) updateData.unidade = unidade?.toUpperCase();
-    if (conteudo !== undefined) updateData.conteudo = conteudo?.toUpperCase();
-    if (data_estudo !== undefined) updateData.data_estudo = data_estudo;
-    if (quantidade !== undefined) updateData.quantidade = quantidade;
-    if (total_acertos !== undefined) updateData.total_acertos = total_acertos;
-    if (data_revisao !== undefined) updateData.data_revisao = data_revisao;
-    if (concluido !== undefined) updateData.concluido = concluido;
-
-    const { data, error } = await supabase
-        .from('estudos')
-        .update(updateData)
-        .eq('id', id)
-        .select();
-    if (error) return res.status(500).json({ error: error.message });
-    if (data.length === 0) return res.status(404).json({ error: 'Estudo não encontrado' });
-    res.json(data[0]);
-});
-
-// Atualização parcial (PATCH) - usada para toggle do checkbox
-app.patch('/api/estudos/:id', async (req, res) => {
-    const { id } = req.params;
-    const updates = req.body;
-
-    const { data, error } = await supabase
-        .from('estudos')
-        .update(updates)
-        .eq('id', id)
-        .select();
-    if (error) return res.status(500).json({ error: error.message });
-    if (data.length === 0) return res.status(404).json({ error: 'Estudo não encontrado' });
-    res.json(data[0]);
-});
-
-// Excluir estudo
-app.delete('/api/estudos/:id', async (req, res) => {
-    const { id } = req.params;
-    const { error } = await supabase
-        .from('estudos')
-        .delete()
-        .eq('id', id);
-    if (error) return res.status(500).json({ error: error.message });
-    res.status(204).send();
-});
-
-// ==================== INICIAR SERVIDOR ====================
-app.listen(PORT, () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
+// Inicia o servidor
+app.listen(port, () => {
+  console.log(`🚀 Servidor rodando na porta ${port}`);
+  console.log(`📁 Servindo arquivos estáticos de: ${path.join(__dirname, 'public')}`);
 });
