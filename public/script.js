@@ -202,6 +202,7 @@ function updateDashboard() {
     const monthStudies = state.studies;
     const hoje = new Date().toISOString().split('T')[0];
 
+    // Totais do mês (para exibição nos cards)
     const finalizados = monthStudies.filter(s => s.concluido).length;
     const foraPrazo = monthStudies.filter(s => !s.concluido && s.data_estudo < hoje).length;
     const programados = monthStudies.filter(s => !s.concluido && s.data_estudo >= hoje).length;
@@ -212,19 +213,32 @@ function updateDashboard() {
     document.getElementById('dashboardProgramados').textContent = programados;
     document.getElementById('dashboardRevisao').textContent = revisao;
 
+    // Alertas por dia (para os badges)
+    const programadosHoje = monthStudies.filter(s => !s.concluido && s.data_estudo === hoje).length;
+    const revisaoHoje = monthStudies.filter(s => s.data_revisao === hoje).length;
+
     const cardForaPrazo = document.getElementById('cardForaPrazo');
-    atualizarPulseBadge(cardForaPrazo, foraPrazo);
+    const cardProgramados = document.getElementById('cardProgramados');
+    const cardRevisao = document.getElementById('cardRevisao');
+
+    // Atualiza badges com as cores específicas
+    atualizarBadge(cardForaPrazo, foraPrazo, 'danger'); // vermelho
+    atualizarBadge(cardProgramados, programadosHoje, 'programado'); // cinza
+    atualizarBadge(cardRevisao, revisaoHoje, 'revisao'); // azul
 }
 
-function atualizarPulseBadge(card, count) {
+function atualizarBadge(card, count, colorClass) {
     if (!card) return;
     let badge = card.querySelector('.pulse-badge');
     if (count > 0) {
         card.classList.add('has-alert');
         if (!badge) {
             badge = document.createElement('div');
-            badge.className = 'pulse-badge';
+            badge.className = `pulse-badge ${colorClass}`;
             card.appendChild(badge);
+        } else {
+            // Atualiza a classe de cor
+            badge.className = `pulse-badge ${colorClass}`;
         }
         badge.textContent = count;
         badge.style.display = 'flex';
@@ -348,7 +362,7 @@ async function saveStudy(event) {
         data_estudo: document.getElementById('data_estudo').value,
         quantidade: parseInt(document.getElementById('quantidade').value) || null,
         total_acertos: parseInt(document.getElementById('total_acertos').value) || null,
-        data_revisao: dataRevisao || null,  // <-- ALTERAÇÃO AQUI
+        data_revisao: dataRevisao || null,
         concluido: editingId ? (state.studies.find(s => s.id == editingId)?.concluido || false) : false
     };
 
