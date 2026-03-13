@@ -4,7 +4,7 @@
 
 const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:3000/api'
-    : '/api';  // no Render, o frontend e backend podem estar no mesmo domínio
+    : '/api';
 
 let state = {
     studies: [],
@@ -337,6 +337,9 @@ async function saveStudy(event) {
         return;
     }
 
+    // CORREÇÃO: data_revisao vazia vira null
+    const dataRevisao = document.getElementById('data_revisao').value;
+    
     const studyData = {
         materia_id: materiaId,
         materia_nome: materiaNome,
@@ -345,7 +348,7 @@ async function saveStudy(event) {
         data_estudo: document.getElementById('data_estudo').value,
         quantidade: parseInt(document.getElementById('quantidade').value) || null,
         total_acertos: parseInt(document.getElementById('total_acertos').value) || null,
-        data_revisao: document.getElementById('data_revisao').value || '',
+        data_revisao: dataRevisao || null,  // <-- ALTERAÇÃO AQUI
         concluido: editingId ? (state.studies.find(s => s.id == editingId)?.concluido || false) : false
     };
 
